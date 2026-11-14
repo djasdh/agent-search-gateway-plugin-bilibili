@@ -1,0 +1,9 @@
+{
+  "id": "bilibili",
+  "name": "Bilibili",
+  "version": "0.1.0",
+  "api_version": 1,
+  "provides": ["fetch"],
+  "entry": "index.mjs",
+  "description": "B 站取件插件：视频/专栏摘要、音频直链与评论区抓取（kukemc CLI / yt-dlp / HTTP 后端）"
+}

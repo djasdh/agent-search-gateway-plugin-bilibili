@@ -1,0 +1,19 @@
+{
+  "name": "agent-search-gateway-plugin-bilibili",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "asg 取件插件：Bilibili 视频/专栏/评论抓取",
+  "license": "MIT",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "test": "npm run build && vitest run && node --test test/build.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
