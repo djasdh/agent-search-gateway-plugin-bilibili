@@ -8,6 +8,7 @@ import { bilibiliPlugin } from "./plugin.js";
 export const fetch = bilibiliPlugin;
 
 export { bilibiliPlugin };
+export { resolveBilibiliConfig, resolveHttpToken } from "./plugin.js";
 export { buildArticleSummary, buildVideoSummary } from "./plugin.js";
 export { createCommentStore } from "./store.js";
 export { isBiliContentUrl, isBilibiliUrl, isShortLink, parseBiliRequest } from "./parse.js";

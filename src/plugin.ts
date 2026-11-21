@@ -24,12 +24,80 @@ import type {
 
 const BUDGET_MS = 60_000;
 const SAMPLE_SIZE = 20;
-const routers = new WeakMap<BilibiliSettings, BiliRouter>();
+// 配置每次解析都会产出新对象，因此 router 按配置内容（含 token）缓存，保留后端实例与探测缓存。
+const routers = new Map<string, BiliRouter>();
 const stores = new Map<string, BiliCommentStore>();
 
+/** 与旧 `bilibiliSchema` / `asg-extension.json` 的默认值保持一致。 */
+const DEFAULT_BILIBILI_SETTINGS: BilibiliSettings = {
+  enabled: false,
+  routes: {
+    detail: ["cli-kukemc", "cli-ytdlp", "http"],
+    comments: ["cli-kukemc", "http"],
+    audio: ["cli-ytdlp", "http"],
+    article: ["http"],
+  },
+  cli_kukemc: { command: "bili", timeout_ms: 30000 },
+  cli_ytdlp: { command: "yt-dlp", cookies_file: "", probe_command: "", timeout_ms: 30000 },
+  http: {
+    base_url: "http://127.0.0.1:8010",
+    command: [],
+    startup_timeout_ms: 10000,
+    request_timeout_ms: 15000,
+  },
+  auth_probe_ttl_ms: 60000,
+  comment_db: "data/bilibili.sqlite",
+  comments: { page_size: 20, search_limit: 50, max_pages_per_fetch: 20 },
+};
+
+type ConfigContext = Pick<FetchPluginContext, "settings" | "pluginConfig">;
+type SecretContext = Pick<FetchPluginContext, "secrets" | "pluginSecrets">;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** 递归合并普通对象；数组整体替换，`undefined` 不覆盖已有值。 */
+function mergeConfig(
+  base: Record<string, unknown>,
+  override: unknown,
+): Record<string, unknown> {
+  if (!isPlainObject(override)) return { ...base };
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    const previous = out[key];
+    out[key] = isPlainObject(previous) && isPlainObject(value)
+      ? mergeConfig(previous, value)
+      : value;
+  }
+  return out;
+}
+
+/**
+ * 解析插件配置，同时兼容 V1 与 V2 宿主。
+ *
+ * - 旧宿主（0.3.8 及更早）注入 `settings.bilibili`；
+ * - V2 宿主（0.3.9+ / 0.4.x）注入 `pluginConfig`，优先级更高；
+ * - 两者都可能是局部对象（0.3.9 迁移出的 `extensions.bilibili.config`），
+ *   因此按「默认值 → 旧切片 → pluginConfig」逐层深合并。
+ */
+export function resolveBilibiliConfig(ctx: ConfigContext): BilibiliSettings {
+  const withLegacy = mergeConfig(
+    DEFAULT_BILIBILI_SETTINGS as unknown as Record<string, unknown>,
+    ctx.settings?.bilibili,
+  );
+  return mergeConfig(withLegacy, ctx.pluginConfig) as unknown as BilibiliSettings;
+}
+
+/** HTTP 后端 token：V2 的 `pluginSecrets.token` 优先于旧 `secrets.bilibili.http.token`。 */
+export function resolveHttpToken(ctx: SecretContext): string {
+  return ctx.pluginSecrets?.token ?? ctx.secrets?.bilibili?.http?.token ?? "";
+}
+
 function routerFor(bilibili: BilibiliSettings, httpToken: string, logger?: Logger): BiliRouter {
-  let r = routers.get(bilibili);
-  if (!r) routers.set(bilibili, (r = createRouter(bilibili, httpToken, logger)));
+  const key = JSON.stringify([bilibili, httpToken]);
+  let r = routers.get(key);
+  if (!r) routers.set(key, (r = createRouter(bilibili, httpToken, logger)));
   return r;
 }
 
@@ -206,9 +274,9 @@ async function handle(
 }
 
 async function fetchBilibili(url: URL, ctx: FetchPluginContext): Promise<FetchPluginResult> {
-  const { settings, secrets, logger } = ctx;
-  const bilibili = settings.bilibili;
-  const httpToken = secrets.bilibili.http.token;
+  const { logger } = ctx;
+  const bilibili = resolveBilibiliConfig(ctx);
+  const httpToken = resolveHttpToken(ctx);
   if (!bilibili.enabled) return fail("BILI_UNAVAILABLE", "B 站抓取未启用（bilibili.enabled=false）。", url.toString());
   try {
     const target = isShortLink(url) ? await resolveShortLink(url) : new URL(url);
@@ -239,8 +307,11 @@ export const bilibiliPlugin: FetchPlugin = {
     { type: "secret", path: "secrets.bilibili.http.token", optional: true },
   ],
   match: (url) => isBilibiliUrl(url) && (isBiliContentUrl(url) || isShortLink(url)),
-  enabled: (ctx) => ctx.settings.bilibili.enabled,
-  // 实际后端可用性由 router 按动作/路由处理，这里只声明插件可被调用。
-  available: () => true,
+  enabled: (ctx) => resolveBilibiliConfig(ctx).enabled,
+  // 实际后端可用性由 router 按动作/路由处理；这里只确认配置可解析、插件可被调用。
+  available: (ctx) => {
+    resolveBilibiliConfig(ctx);
+    return true;
+  },
   fetch: fetchBilibili,
 };

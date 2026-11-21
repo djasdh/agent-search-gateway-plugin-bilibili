@@ -1,6 +1,6 @@
 {
   "name": "agent-search-gateway-plugin-bilibili",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "asg 取件插件：Bilibili 视频/专栏/评论抓取",

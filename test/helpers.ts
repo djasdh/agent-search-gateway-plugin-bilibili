@@ -12,6 +12,14 @@ export interface ContextOverrides {
   commentDb?: string;
   comments?: BilibiliSettings["comments"];
   fetch?: Partial<FetchPluginSettings["fetch"]>;
+  /** 是否注入旧宿主的 `settings.bilibili`，默认 true。 */
+  legacy?: boolean;
+  /** V2 宿主注入的 `pluginConfig`。 */
+  pluginConfig?: Readonly<Record<string, unknown>>;
+  /** V2 宿主注入的 `pluginSecrets`。 */
+  pluginSecrets?: Record<string, string>;
+  /** 旧宿主的 `secrets.bilibili.http.token`。 */
+  legacyToken?: string;
 }
 
 export function tmpDir(prefix = "asg-bilibili-"): string {
@@ -43,18 +51,22 @@ export function makeSettings(dir: string, overrides: ContextOverrides = {}): Bil
 
 export function makeContext(overrides: ContextOverrides = {}): FetchPluginContext {
   const dir = tmpDir();
-  const bilibili = makeSettings(dir, overrides);
-  return {
-    settings: {
-      fetch: {
-        timeout_ms: 15000,
-        max_bytes: 5 * 1024 * 1024,
-        user_agent: "",
-        ...overrides.fetch,
-      },
-      bilibili,
+  const settings: FetchPluginSettings = {
+    fetch: {
+      timeout_ms: 15000,
+      max_bytes: 5 * 1024 * 1024,
+      user_agent: "",
+      ...overrides.fetch,
     },
-    secrets: { bilibili: { http: { token: "" } } },
+  };
+  if (overrides.legacy !== false) settings.bilibili = makeSettings(dir, overrides);
+
+  const ctx: FetchPluginContext = {
+    settings,
+    secrets: { bilibili: { http: { token: overrides.legacyToken ?? "" } } },
     getSecret: () => undefined,
   };
+  if (overrides.pluginConfig) ctx.pluginConfig = overrides.pluginConfig;
+  if (overrides.pluginSecrets) ctx.pluginSecrets = overrides.pluginSecrets;
+  return ctx;
 }

@@ -55,7 +55,8 @@ export interface BilibiliSettings {
 
 export interface FetchPluginSettings {
   fetch: FetchSettings;
-  bilibili: BilibiliSettings;
+  /** V1 宿主注入的平台切片；V2（0.3.9+ / 0.4.x）宿主只给 `pluginConfig`。 */
+  bilibili?: BilibiliSettings;
 }
 
 export interface FetchPluginSecrets {

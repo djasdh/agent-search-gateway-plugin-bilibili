@@ -1,0 +1,212 @@
+{
+  "id": "bilibili",
+  "name": "Bilibili",
+  "version": "0.2.0",
+  "api_version": 2,
+  "description": "B 站取件插件：视频/专栏摘要、音频直链与评论区抓取（kukemc CLI / yt-dlp / HTTP 后端）",
+  "provides": ["fetch"],
+  "entry": "index.mjs",
+  "fetch_channels": [
+    {
+      "id": "bilibili:kukemc",
+      "name": "kukemc",
+      "kind": "cli",
+      "capabilities": ["detail", "comments"],
+      "aliases": ["bili", "cli-kukemc"],
+      "description": "kukemc 的 bili CLI：详情、评论与登录态"
+    },
+    {
+      "id": "bilibili:ytdlp",
+      "name": "yt-dlp",
+      "kind": "cli",
+      "capabilities": ["detail", "audio"],
+      "aliases": ["ytdlp", "cli-ytdlp"],
+      "description": "yt-dlp CLI：详情与音频直链"
+    },
+    {
+      "id": "bilibili:article",
+      "name": "article",
+      "kind": "http",
+      "capabilities": ["detail", "comments", "audio", "article"],
+      "aliases": ["article", "bilibili:http"],
+      "description": "自建 HTTP 后端：详情、评论、音频与专栏"
+    }
+  ],
+  "config_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否启用 B 站取件插件"
+      },
+      "routes": {
+        "type": "object",
+        "description": "按能力选择后端，按数组顺序依次尝试",
+        "additionalProperties": false,
+        "default": {
+          "detail": ["cli-kukemc", "cli-ytdlp", "http"],
+          "comments": ["cli-kukemc", "http"],
+          "audio": ["cli-ytdlp", "http"],
+          "article": ["http"]
+        },
+        "properties": {
+          "detail": {
+            "type": "array",
+            "description": "详情抓取后端顺序",
+            "default": ["cli-kukemc", "cli-ytdlp", "http"],
+            "items": { "type": "string" }
+          },
+          "comments": {
+            "type": "array",
+            "description": "评论抓取后端顺序",
+            "default": ["cli-kukemc", "http"],
+            "items": { "type": "string" }
+          },
+          "audio": {
+            "type": "array",
+            "description": "音频直链后端顺序",
+            "default": ["cli-ytdlp", "http"],
+            "items": { "type": "string" }
+          },
+          "article": {
+            "type": "array",
+            "description": "专栏抓取后端顺序",
+            "default": ["http"],
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "cli_kukemc": {
+        "type": "object",
+        "description": "kukemc bili CLI 配置",
+        "additionalProperties": false,
+        "default": { "command": "bili", "timeout_ms": 30000 },
+        "properties": {
+          "command": {
+            "type": "string",
+            "default": "bili",
+            "description": "CLI 可执行文件名"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "default": 30000,
+            "minimum": 1,
+            "description": "单次 CLI 调用超时"
+          }
+        }
+      },
+      "cli_ytdlp": {
+        "type": "object",
+        "description": "yt-dlp CLI 配置",
+        "additionalProperties": false,
+        "default": {
+          "command": "yt-dlp",
+          "cookies_file": "",
+          "probe_command": "",
+          "timeout_ms": 30000
+        },
+        "properties": {
+          "command": {
+            "type": "string",
+            "default": "yt-dlp",
+            "description": "CLI 可执行文件名"
+          },
+          "cookies_file": {
+            "type": "string",
+            "default": "",
+            "description": "传给 yt-dlp 的 cookies 文件路径；空表示不传"
+          },
+          "probe_command": {
+            "type": "string",
+            "default": "",
+            "description": "自定义可用性探测命令；空表示默认探测"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "default": 30000,
+            "minimum": 1,
+            "description": "单次 CLI 调用超时"
+          }
+        }
+      },
+      "http": {
+        "type": "object",
+        "description": "自建 HTTP 后端配置",
+        "additionalProperties": false,
+        "default": {
+          "base_url": "http://127.0.0.1:8010",
+          "command": [],
+          "startup_timeout_ms": 10000,
+          "request_timeout_ms": 15000
+        },
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "default": "http://127.0.0.1:8010",
+            "description": "HTTP 后端地址"
+          },
+          "command": {
+            "type": "array",
+            "description": "非空时由插件负责拉起/回收；空表示只连常驻服务",
+            "default": [],
+            "items": { "type": "string" }
+          },
+          "startup_timeout_ms": {
+            "type": "integer",
+            "default": 10000,
+            "minimum": 1,
+            "description": "托管启动等待超时"
+          },
+          "request_timeout_ms": {
+            "type": "integer",
+            "default": 15000,
+            "minimum": 1,
+            "description": "单次 HTTP 请求超时"
+          }
+        }
+      },
+      "auth_probe_ttl_ms": {
+        "type": "integer",
+        "default": 60000,
+        "minimum": 1,
+        "description": "登录态探测结果缓存时长"
+      },
+      "comment_db": {
+        "type": "string",
+        "default": "data/bilibili.sqlite",
+        "description": "评论本地库路径"
+      },
+      "comments": {
+        "type": "object",
+        "description": "评论抓取参数",
+        "additionalProperties": false,
+        "default": { "page_size": 20, "search_limit": 50, "max_pages_per_fetch": 20 },
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 50,
+            "description": "单页评论条数"
+          },
+          "search_limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 200,
+            "description": "本地评论检索返回上限"
+          },
+          "max_pages_per_fetch": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "单次 fetch 最多抓取页数"
+          }
+        }
+      }
+    }
+  }
+}
