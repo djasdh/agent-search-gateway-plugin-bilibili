@@ -5,12 +5,12 @@
 - 仓库 topic：**`asg-plugin`**（用户可通过 `asg extensions search bilibili` 找到）
 - 插件 id：`bilibili`
 - 能力：`fetch`（提供 `video` / `article` / `comments`）
-- 插件版本：`0.2.0`（V2 manifest，同时保留 V1 manifest）
+- 插件版本：`0.2.1`（V2 manifest，同时保留 V1 manifest）
 
 ## 安装
 
 ```bash
-asg extensions install djasdh/agent-search-gateway-plugin-bilibili@0.2.0
+asg extensions install djasdh/agent-search-gateway-plugin-bilibili@0.2.1
 asg extensions list
 ```
 
@@ -96,6 +96,31 @@ bilibili:
 
 这三个后端依赖用户自己安装的 `bili` / `yt-dlp` 或外部 HTTP 服务，插件不声明
 `backends`，也不提供 `setup` 安装流程。
+
+## 错误码与诊断
+
+插件保留网关的 5 个错误码；后端返回的上游 code（如 `BILI_ARTICLE_FAIL`）和 B 站
+业务码（如 `-352`）会出现在错误文本里，便于判断重试策略。
+
+| 错误码 | 典型原因 | 建议动作 |
+| --- | --- | --- |
+| `BILI_AUTH_REQUIRED` | 未登录、Cookie 过期、B 站 `-101` | 运行 `bili auth login`，或给 article 后端配置 `BILI_COOKIE` / `BILI_COOKIE_FILE` |
+| `BILI_RISK_CONTROL` | B 站风控 `-352` / `-412`、限流 `-509` / `-799`、HTTP 412 / 429 | `-352` / `-412` 换出口或补登录态；`-509` / `-799` 退避后重试 |
+| `BILI_UNAVAILABLE` | 后端未启动、不可达、返回未知错误 | 检查 `http.base_url` / 后端进程；错误文本会保留上游 code 与 message |
+| `BILI_CAPABILITY_UNSUPPORTED` | 当前路由的后端不支持该动作 | 调整 `routes`，例如专栏只能走 `http` |
+| `BILI_INVALID_URL` | 非视频 / 专栏地址 | 改用 `/video/BV...`、`/read/cv...` 或 b23.tv 短链 |
+
+### 专栏后端的登录态 Cookie
+
+`bilibili-article-server` 需要登录态时：
+
+1. 运行 `bili auth login` 扫码登录；
+2. 从 `~/.config/bili-cli/credential.json` 取 `SESSDATA` / `bili_jct` / `buvid3` /
+   `buvid4` / `DedeUserID`；
+3. 拼成一行 `SESSDATA=...; bili_jct=...; buvid3=...; buvid4=...; DedeUserID=...`，
+   写入权限 `0600` 的文件；
+4. 在网关进程环境里设置 `BILI_COOKIE_FILE=/path/to/cookie`（或直接 `BILI_COOKIE`），
+   重启网关。
 
 ## 开发
 

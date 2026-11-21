@@ -118,21 +118,57 @@ const fail = (code: string, message: string, finalUrl?: string): FetchPluginResu
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** 对 agent 只暴露错误码含义，不暴露插件名/后端名/尝试链。 */
+const ERROR_TEXT_LIMIT = 500;
+
+/** 错误文本里可能带 URL / Cookie 片段；统一压成单行并做最小脱敏。 */
+function cleanErrorText(value: string): string {
+  const text = value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(SESSDATA|bili_jct|buvid3|buvid4|DedeUserID)=[^;\s]+/gi, "$1=***")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer ***");
+  return text.length > ERROR_TEXT_LIMIT ? `${text.slice(0, ERROR_TEXT_LIMIT)}…` : text;
+}
+
+const stringDetail = (err: BiliError, key: string): string | undefined => {
+  const value = err.detail?.[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
+/** 对 agent 暴露错误码含义 + 可诊断的上游原因，但不暴露插件名/尝试链。 */
 function publicError(err: BiliError): string {
-  const hint = err.hint ? `（${err.hint}）` : "";
-  switch (err.code) {
-    case "BILI_AUTH_REQUIRED":
-      return `需要登录${hint}`;
-    case "BILI_RISK_CONTROL":
-      return `B 站风控拦截${hint}`;
-    case "BILI_CAPABILITY_UNSUPPORTED":
-      return `当前后端不支持该动作${hint}`;
-    case "BILI_INVALID_URL":
-      return err.message;
-    default:
-      return `Bilibili 后端不可用${hint}`;
-  }
+  if (err.code === "BILI_INVALID_URL") return cleanErrorText(err.message);
+
+  const label = (() => {
+    switch (err.code) {
+      case "BILI_AUTH_REQUIRED":
+        return "需要登录";
+      case "BILI_RISK_CONTROL":
+        return "B 站风控拦截";
+      case "BILI_CAPABILITY_UNSUPPORTED":
+        return "当前后端不支持该动作";
+      default:
+        return "Bilibili 后端不可用";
+    }
+  })();
+
+  const upstreamCode = stringDetail(err, "upstreamCode");
+  const upstreamMessage = stringDetail(err, "upstreamMessage");
+  const reason = cleanErrorText(upstreamMessage ?? err.message);
+
+  const notes: string[] = [];
+  if (upstreamCode && upstreamCode !== err.code) notes.push(`上游 ${upstreamCode}`);
+  if (err.hint && !reason.includes(err.hint)) notes.push(cleanErrorText(err.hint));
+  const tail = notes.length > 0 ? `（${notes.join("；")}）` : "";
+
+  // 能力不支持是属于插件内部的提示，不把后端实现细节带给 agent。
+  if (err.code === "BILI_CAPABILITY_UNSUPPORTED") return cleanErrorText(`${label}${tail}`);
+
+  const redundant = reason.length === 0
+    || reason === label
+    || (label === "Bilibili 后端不可用" && reason.startsWith("Bilibili 后端"));
+  const body = redundant ? label : `${label}：${reason}`;
+  return cleanErrorText(`${body}${tail}`);
 }
 
 export function buildVideoSummary(

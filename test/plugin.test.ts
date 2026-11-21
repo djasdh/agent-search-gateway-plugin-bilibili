@@ -12,7 +12,13 @@ interface Stub {
   close(): Promise<void>;
 }
 
-async function startStub(): Promise<Stub> {
+interface ArticleFailure {
+  code: string;
+  message: string;
+  hint?: string;
+}
+
+async function startStub(articleFailure?: ArticleFailure): Promise<Stub> {
   const auth: Array<string | undefined> = [];
   const server = createServer((req, res) => {
     auth.push(req.headers.authorization);
@@ -43,6 +49,7 @@ async function startStub(): Promise<Stub> {
       });
     }
     if (url.pathname === "/article") {
+      if (articleFailure) return send({ ok: false, error: articleFailure });
       return send({ ok: true, data: { cv: "123", title: "专栏", content: "正文", meta: { cover: "https://cover" } } });
     }
     res.writeHead(404);
@@ -142,6 +149,56 @@ describe("V2 宿主（pluginConfig / pluginSecrets）", () => {
       secrets: { bilibili: { http: { token: "legacy-token" } } },
       pluginSecrets: {},
     })).toBe("legacy-token");
+  });
+});
+
+describe("上游错误诊断", () => {
+  const articleRoutes: BilibiliSettings["routes"] = {
+    detail: ["http"], comments: ["http"], audio: ["http"], article: ["http"],
+  };
+
+  async function fetchArticle(failure: ArticleFailure) {
+    const stub = await startStub(failure);
+    const ctx = makeContext({ httpBaseUrl: stub.baseUrl, routes: articleRoutes });
+    try {
+      return await plugin.fetch(new URL("https://www.bilibili.com/read/cv34975835"), ctx);
+    } finally {
+      await stub.close();
+    }
+  }
+
+  it("未知 BILI_ARTICLE_FAIL 不再折叠，-352 显示为风控并保留上游码", async () => {
+    const r = await fetchArticle({
+      code: "BILI_ARTICLE_FAIL",
+      message: "获取专栏失败：ResponseCodeException: 接口返回错误代码：-352，信息：-352。",
+    });
+
+    expect(r).toMatchObject({ ok: false, errorCode: "BILI_RISK_CONTROL" });
+    expect(r.errorMessage).toContain("B 站风控拦截");
+    expect(r.errorMessage).toContain("-352");
+    expect(r.errorMessage).toContain("BILI_ARTICLE_FAIL");
+  });
+
+  it("-509 显示限流提示", async () => {
+    const r = await fetchArticle({
+      code: "BILI_ARTICLE_FAIL",
+      message: "获取专栏失败：接口返回错误代码：-509，信息：请求过于频繁。",
+    });
+
+    expect(r).toMatchObject({ ok: false, errorCode: "BILI_RISK_CONTROL" });
+    expect(r.errorMessage).toContain("-509");
+    expect(r.errorMessage).toContain("稍后重试");
+  });
+
+  it("完全未知的上游码仍保留 message 与上游 code", async () => {
+    const r = await fetchArticle({
+      code: "BILI_DETAIL_FAIL",
+      message: "获取专栏失败：upstream exploded",
+    });
+
+    expect(r).toMatchObject({ ok: false, errorCode: "BILI_UNAVAILABLE" });
+    expect(r.errorMessage).toContain("upstream exploded");
+    expect(r.errorMessage).toContain("BILI_DETAIL_FAIL");
   });
 });
 

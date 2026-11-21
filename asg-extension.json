@@ -1,7 +1,7 @@
 {
   "id": "bilibili",
   "name": "Bilibili",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "api_version": 2,
   "description": "B 站取件插件：视频/专栏摘要、音频直链与评论区抓取（kukemc CLI / yt-dlp / HTTP 后端）",
   "provides": ["fetch"],

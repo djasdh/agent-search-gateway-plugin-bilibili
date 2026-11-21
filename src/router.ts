@@ -70,16 +70,21 @@ export function createRouter(bilibili: BilibiliSettings, httpToken: string, logg
       try {
         const p = await probe(b, ref);
         if (!p.ok) {
-          last = new BiliError("BILI_UNAVAILABLE", `${b.id} 不可用：${p.error ?? "探测失败"}`);
+          last = new BiliError(
+            "BILI_UNAVAILABLE",
+            `${b.id} 不可用：${p.error ?? "探测失败"}`,
+            undefined,
+            { backend: b.id, ...(p.error ? { upstreamMessage: p.error } : {}) },
+          );
           attempts.push({ backend: b.id, ok: false, code: last.code, error: last.message });
           continue;
         }
         if (needsLogin && !p.loggedIn) {
           const hint = p.hint ?? "后端未登录";
           if (candidates.length === 1) {
-            throw new BiliError("BILI_AUTH_REQUIRED", `${b.id} 不可用：${hint}`, p.hint);
+            throw new BiliError("BILI_AUTH_REQUIRED", `${b.id} 不可用：${hint}`, p.hint, { backend: b.id });
           }
-          lastAuth = new BiliError("BILI_AUTH_REQUIRED", `${b.id} 不可用：${hint}`, p.hint);
+          lastAuth = new BiliError("BILI_AUTH_REQUIRED", `${b.id} 不可用：${hint}`, p.hint, { backend: b.id });
           attempts.push({ backend: b.id, ok: false, code: lastAuth.code, error: hint });
           continue;
         }
@@ -87,7 +92,10 @@ export function createRouter(bilibili: BilibiliSettings, httpToken: string, logg
       } catch (err) {
         const wrapped = err instanceof BiliError
           ? err
-          : new BiliError("BILI_UNAVAILABLE", `后端 ${b.id} 异常：${message(err)}`);
+          : new BiliError("BILI_UNAVAILABLE", `后端 ${b.id} 异常：${message(err)}`, undefined, {
+            backend: b.id,
+            upstreamMessage: message(err),
+          });
         if (wrapped.code === "BILI_AUTH_REQUIRED") {
           lastAuth = wrapped;
           probes.delete(b.id);
@@ -102,7 +110,7 @@ export function createRouter(bilibili: BilibiliSettings, httpToken: string, logg
       final?.code ?? "BILI_UNAVAILABLE",
       final?.message ?? "Bilibili 后端均不可用（未配置路由）",
       final?.hint,
-      { attempts },
+      { ...final?.detail, attempts },
     );
   }
 
